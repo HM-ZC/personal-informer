@@ -186,15 +186,15 @@ class Dataset_ETT_minute(Dataset):
 
 
 class Dataset_Custom(Dataset):
-    def __init__(self, root_path, flag='train', size=None, 
-                 features='S', data_path='ETTh1.csv', 
-                 target='OT', scale=True, inverse=False, timeenc=0, freq='h', cols=None):
+    def __init__(self, root_path, flag='train', size=None,
+                 features='S', data_path='all_shots_data.csv',
+                 target='x', scale=True, inverse=False, timeenc=0, freq='0.05s', cols=None):
         # size [seq_len, label_len, pred_len]
         # info
         if size == None:
-            self.seq_len = 24*4*4
-            self.label_len = 24*4
-            self.pred_len = 24*4
+            self.seq_len = 10
+            self.label_len = 5
+            self.pred_len = 5
         else:
             self.seq_len = size[0]
             self.label_len = size[1]
@@ -203,7 +203,7 @@ class Dataset_Custom(Dataset):
         assert flag in ['train', 'test', 'val']
         type_map = {'train':0, 'val':1, 'test':2}
         self.set_type = type_map[flag]
-        
+
         self.features = features
         self.target = target
         self.scale = scale
@@ -222,14 +222,19 @@ class Dataset_Custom(Dataset):
         '''
         df_raw.columns: ['date', ...(other features), target feature]
         '''
-        # cols = list(df_raw.columns); 
+        # cols = list(df_raw.columns);
+        # 选择输入特征列
         if self.cols:
-            cols=self.cols.copy()
-            cols.remove(self.target)
+            cols = self.cols.copy()
+            if self.target in cols:
+                cols.remove(self.target)
         else:
-            cols = list(df_raw.columns); cols.remove(self.target); cols.remove('date')
-        df_raw = df_raw[['date']+cols+[self.target]]
-
+            cols = list(df_raw.columns)
+            cols.remove(self.target)  # 移除目标列
+            if 'timestamp' in cols:
+                cols.remove('timestamp')  # 如果有时间戳列，移除
+        # 将输入特征与目标列组合
+        df_raw = df_raw[['timestamp'] + cols + [self.target]]
         num_train = int(len(df_raw)*0.7)
         num_test = int(len(df_raw)*0.2)
         num_vali = len(df_raw) - num_train - num_test
@@ -237,7 +242,7 @@ class Dataset_Custom(Dataset):
         border2s = [num_train, num_train+num_vali, len(df_raw)]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
-        
+
         if self.features=='M' or self.features=='MS':
             cols_data = df_raw.columns[1:]
             df_data = df_raw[cols_data]
@@ -250,9 +255,9 @@ class Dataset_Custom(Dataset):
             data = self.scaler.transform(df_data.values)
         else:
             data = df_data.values
-            
-        df_stamp = df_raw[['date']][border1:border2]
-        df_stamp['date'] = pd.to_datetime(df_stamp.date)
+
+        df_stamp = df_raw[['timestamp']][border1:border2]
+        df_stamp['timestamp'] = pd.to_datetime(df_stamp['timestamp'])
         data_stamp = time_features(df_stamp, timeenc=self.timeenc, freq=self.freq)
 
         self.data_x = data[border1:border2]
@@ -261,11 +266,11 @@ class Dataset_Custom(Dataset):
         else:
             self.data_y = data[border1:border2]
         self.data_stamp = data_stamp
-    
+
     def __getitem__(self, index):
         s_begin = index
         s_end = s_begin + self.seq_len
-        r_begin = s_end - self.label_len 
+        r_begin = s_end - self.label_len
         r_end = r_begin + self.label_len + self.pred_len
 
         seq_x = self.data_x[s_begin:s_end]
@@ -277,7 +282,7 @@ class Dataset_Custom(Dataset):
         seq_y_mark = self.data_stamp[r_begin:r_end]
 
         return seq_x, seq_y, seq_x_mark, seq_y_mark
-    
+
     def __len__(self):
         return len(self.data_x) - self.seq_len- self.pred_len + 1
 
